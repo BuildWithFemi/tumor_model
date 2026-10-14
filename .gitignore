@@ -1,0 +1,6 @@
+# Reference CSS — not shipped with the project
+globals.css
+
+# OS files
+.DS_Store
+Thumbs.db

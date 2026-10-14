@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<!--
+  Brain Tumour MRI Classifier — Educational Use Only
+  =====================================================
+  IMPORTANT: This page requires a local HTTP server to load the TensorFlow.js
+  model due to browser CORS restrictions. Do NOT open via file:// protocol.
+
+  To run locally:
+    npx serve .
+  Then open: http://localhost:3000
+
+  Or with Python:
+    python -m http.server 8080
+  Then open: http://localhost:8080
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brain Tumour MRI Classifier</title>
+
+  <!-- Fonts: Syne (headings) + Inter (body) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- TensorFlow.js + Teachable Machine Image -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+
+  <style>
+    /* ── CSS Variables (dark theme only) ───────────────────────── */
+    :root {
+      --bg-base:      #111111;
+      --bg-mid:       #181818;
+      --bg-deep:      #0d0d0d;
+      --bg-panel:     rgba(255,255,255,0.03);
+      --fg-primary:   #f0f0f0;
+      --fg-secondary: #c8c8c8;
+      --fg-muted:     #888888;
+      --fg-ghost:     #555555;
+      --line:         rgba(255,255,255,0.09);
+      --line-strong:  rgba(255,255,255,0.16);
+      --pill-bg:      rgba(255,255,255,0.05);
+      --pill-border:  rgba(255,255,255,0.12);
+      --card-bg:      rgba(255,255,255,0.03);
+      --warn-bg:      rgba(255,200,0,0.07);
+      --warn-border:  rgba(255,200,0,0.22);
+      --warn-text:    #d4a800;
+      --accent-bar:   #f0f0f0;
+      --track-bar:    rgba(255,255,255,0.08);
+    }
+
+    /* ── Reset & Base ───────────────────────────────────────────── */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--fg-primary);
+      font-family: 'Inter', sans-serif;
+      font-weight: 400;
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    ::selection {
+      background: rgba(128,128,128,0.22);
+      color: var(--fg-primary);
+    }
+
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-track { background: var(--bg-base); }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+
+    /* ── Typography Utilities ───────────────────────────────────── */
+    .font-display {
+      font-family: 'Syne', sans-serif;
+    }
+
+    h1, h2, h3 {
+      font-family: 'Syne', sans-serif;
+      line-height: 1.2;
+    }
+
+    /* ── Noise Overlay ──────────────────────────────────────────── */
+    .noise-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      pointer-events: none;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    }
+
+    /* ── Page Wrapper ───────────────────────────────────────────── */
+    .page-wrapper {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    header {
+      padding: 48px 0 32px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .header-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
+      color: var(--fg-primary);
+      letter-spacing: -0.02em;
+    }
+
+    .header-subtitle {
+      font-family: 'Inter', sans-serif;
+      font-weight: 300;
+      font-size: 0.85rem;
+      color: var(--fg-muted);
+      margin-top: 6px;
+      letter-spacing: 0.01em;
+    }
+
+    /* Model status chip */
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.78rem;
+      font-weight: 500;
+      border: 1px solid var(--pill-border);
+      background: var(--pill-bg);
+      color: var(--fg-muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+      align-self: flex-start;
+      margin-top: 4px;
+    }
+
+    .status-chip .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--fg-ghost);
+      flex-shrink: 0;
+    }
+
+    .status-chip.loading .dot { background: #d4a800; }
+    .status-chip.ready .dot   { background: #4caf82; }
+    .status-chip.error .dot   { background: #c0392b; }
+    .status-chip.ready        { color: var(--fg-secondary); }
+    .status-chip.error        { color: #c0392b; border-color: rgba(192,57,43,0.3); }
+
+    /* ── Disclaimer Banner ──────────────────────────────────────── */
+    .disclaimer-banner {
+      margin: 24px 0;
+      padding: 14px 18px;
+      background: var(--bg-mid);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .disclaimer-banner .icon {
+      font-size: 1rem;
+      flex-shrink: 0;
+      margin-top: 1px;
+      color: var(--warn-text);
+    }
+
+    .disclaimer-banner p {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.84rem;
+      color: var(--fg-secondary);
+      line-height: 1.5;
+    }
+
+    .disclaimer-banner strong {
+      font-weight: 600;
+      color: var(--fg-primary);
+    }
+
+    /* ── Main Content Grid ──────────────────────────────────────── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      padding: 8px 0 48px;
+      align-items: start;
+    }
+
+    /* Left column: preview zone + sample grid stacked */
+    .left-col {
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    /* ── Preview Zone ───────────────────────────────────────────── */
+    .preview-section {
+      order: 1;
+    }
+
+    .section-label {
+      font-family: 'Syne', sans-serif;
+      font-weight: 600;
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--fg-ghost);
+      margin-bottom: 12px;
+    }
+
+    .preview-zone {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      max-height: 360px;
+      background: var(--bg-deep);
+      border: 1px dashed var(--line-strong);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .preview-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      text-align: center;
+      padding: 24px;
+      pointer-events: none;
+    }
+
+    .preview-placeholder .icon-large {
+      font-size: 2rem;
+      opacity: 0.3;
+    }
+
+    .preview-placeholder p {
+      font-size: 0.83rem;
+      color: var(--fg-ghost);
+      line-height: 1.4;
+    }
+
+    #preview-img {
+      display: none;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+    }
+
+    #preview-img.visible {
+      display: block;
+    }
+
+    /* Upload button */
+    .upload-btn {
+      margin-top: 12px;
+      width: 100%;
+      padding: 11px 20px;
+      background: var(--bg-mid);
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      color: var(--fg-secondary);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .upload-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* ── Sample Grid Section ────────────────────────────────────── */
+    .samples-section {
+      order: 3;
+    }
+
+    .sample-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .sample-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0;
+      cursor: pointer;
+      overflow: hidden;
+      aspect-ratio: 1 / 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .sample-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .sample-btn img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* Fallback for missing sample images */
+    .sample-btn .sample-fallback {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.7rem;
+      color: var(--fg-ghost);
+      text-align: center;
+      padding: 8px 4px;
+    }
+
+    /* Active/selected state for sample */
+    .sample-btn.active {
+      border-color: var(--line-strong);
+      outline: 2px solid rgba(255,255,255,0.25);
+      outline-offset: 2px;
+    }
+
+    /* ── Results Panel ──────────────────────────────────────────── */
+    .results-section {
+      order: 2;
+    }
+
+    .results-panel {
+      background: var(--bg-mid);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 28px;
+      min-height: 360px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Empty state */
+    .results-empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      text-align: center;
+    }
+
+    .results-empty .icon-large {
+      font-size: 2rem;
+      opacity: 0.2;
+    }
+
+    .results-empty p {
+      font-size: 0.85rem;
+      color: var(--fg-ghost);
+    }
+
+    /* Results content (hidden until inference runs) */
+    .results-content {
+      display: none;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .results-content.visible {
+      display: flex;
+    }
+
+    /* Top prediction */
+    .prediction-header {
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .prediction-label {
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--fg-ghost);
+      margin-bottom: 6px;
+    }
+
+    .prediction-class {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      color: var(--fg-primary);
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+    }
+
+    .prediction-confidence {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.875rem;
+      color: var(--fg-muted);
+      margin-top: 4px;
+      font-weight: 300;
+    }
+
+    /* Probability bars */
+    .bars-section {}
+
+    .bars-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 600;
+      font-size: 0.78rem;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--fg-ghost);
+      margin-bottom: 14px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 110px 1fr 44px;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .bar-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .bar-label {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.82rem;
+      color: var(--fg-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .bar-row.top-class .bar-label {
+      color: var(--fg-primary);
+      font-weight: 500;
+    }
+
+    .bar-track {
+      height: 6px;
+      background: var(--track-bar);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: var(--fg-ghost);
+      border-radius: 3px;
+      width: 0%;
+    }
+
+    .bar-row.top-class .bar-fill {
+      background: var(--fg-primary);
+    }
+
+    .bar-pct {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.8rem;
+      color: var(--fg-muted);
+      text-align: right;
+      font-weight: 300;
+    }
+
+    .bar-row.top-class .bar-pct {
+      color: var(--fg-secondary);
+      font-weight: 500;
+    }
+
+    /* Educational blurb */
+    .blurb-section {}
+
+    .blurb-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 600;
+      font-size: 0.78rem;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--fg-ghost);
+      margin-bottom: 10px;
+    }
+
+    .blurb-text {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.86rem;
+      color: var(--fg-secondary);
+      line-height: 1.65;
+      font-weight: 300;
+    }
+
+    /* Divider */
+    .divider {
+      height: 1px;
+      background: var(--line);
+      margin: 4px 0;
+    }
+
+    /* ── Warning Boxes ──────────────────────────────────────────── */
+    .warning-box {
+      display: none;
+      padding: 12px 14px;
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      border-radius: 7px;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .warning-box.visible {
+      display: flex;
+    }
+
+    .warning-box .w-icon {
+      font-size: 0.9rem;
+      flex-shrink: 0;
+      margin-top: 1px;
+      color: var(--warn-text);
+    }
+
+    .warning-box p {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.82rem;
+      color: var(--warn-text);
+      line-height: 1.5;
+      font-weight: 400;
+    }
+
+    /* Non-MRI blocked state — replaces results when heuristic fires */
+    .non-mri-block {
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+      padding: 24px;
+      background: rgba(255,200,0,0.05);
+      border: 1px solid var(--warn-border);
+      border-radius: 8px;
+      text-align: center;
+      align-items: center;
+    }
+
+    .non-mri-block.visible {
+      display: flex;
+    }
+
+    .non-mri-block .block-icon {
+      font-size: 2rem;
+      opacity: 0.7;
+    }
+
+    .non-mri-block .block-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 600;
+      font-size: 1rem;
+      color: var(--warn-text);
+    }
+
+    .non-mri-block .block-body {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.83rem;
+      color: var(--fg-muted);
+      line-height: 1.55;
+      font-weight: 300;
+      max-width: 320px;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 28px 0;
+      text-align: center;
+    }
+
+    footer p {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.8rem;
+      color: var(--fg-ghost);
+      font-weight: 300;
+      line-height: 1.5;
+    }
+
+    footer p + p {
+      margin-top: 4px;
+    }
+
+    /* ── Responsive: Tablet & Mobile (< 900px) ──────────────────── */
+    @media (max-width: 899px) {
+      /* Collapse grid to single column */
+      .main-grid {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+
+      /* The right column (results) needs to be part of the flow */
+      .left-col {
+        display: contents; /* flatten children into grid */
+      }
+
+      /* CSS order reflow: Preview → Results → Samples */
+      .preview-section  { order: 1; }
+      .results-section  { order: 2; }
+      .samples-section  { order: 3; }
+
+      /* Sample grid: 3 columns on tablet */
+      .sample-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .bar-row {
+        grid-template-columns: 90px 1fr 40px;
+      }
+    }
+
+    @media (max-width: 599px) {
+      .page-wrapper {
+        padding: 0 16px;
+      }
+
+      header {
+        padding: 32px 0 24px;
+      }
+
+      .header-inner {
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      /* Sample grid: 2 columns on mobile */
+      .sample-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .results-panel {
+        padding: 20px;
+      }
+
+      .bar-row {
+        grid-template-columns: 80px 1fr 36px;
+        gap: 8px;
+      }
+
+      .bar-label {
+        font-size: 0.78rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Noise texture overlay -->
+  <div class="noise-overlay" aria-hidden="true"></div>
+
+  <div class="page-wrapper">
+
+    <!-- ── Header ────────────────────────────────────────────── -->
+    <header>
+      <div class="header-inner">
+        <div>
+          <h1 class="header-title">Brain Tumour MRI Classifier</h1>
+          <p class="header-subtitle">Educational use only &nbsp;·&nbsp; Not for clinical use</p>
+        </div>
+        <div id="status-chip" class="status-chip loading" role="status" aria-live="polite">
+          <span class="dot"></span>
+          <span id="status-text">Loading model…</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ── Disclaimer Banner ─────────────────────────────────── -->
+    <aside class="disclaimer-banner" role="note" aria-label="Important disclaimer">
+      <span class="icon" aria-hidden="true">⚠</span>
+      <p>
+        <strong>Important:</strong> This tool only accepts brain MRI axial or coronal slices.
+        Results are generated by a machine learning model and are
+        <strong>not a medical diagnosis</strong>. Always consult a qualified radiologist or
+        medical professional for any clinical concerns.
+      </p>
+    </aside>
+
+    <!-- ── Main Content ──────────────────────────────────────── -->
+    <main>
+      <div class="main-grid">
+
+        <!-- Left column: preview + samples -->
+        <div class="left-col">
+
+          <!-- Preview Zone -->
+          <section class="preview-section" aria-label="Image preview">
+            <p class="section-label">MRI Image</p>
+
+            <div class="preview-zone" id="preview-zone">
+              <div class="preview-placeholder" id="preview-placeholder">
+                <p>Drop an image or select a sample below</p>
+              </div>
+              <img
+                id="preview-img"
+                src=""
+                alt="Selected MRI scan for classification"
+              />
+            </div>
+
+            <!-- Hidden file input -->
+            <input
+              type="file"
+              id="file-input"
+              accept="image/*"
+              style="display:none"
+              aria-label="Upload an MRI image"
+            />
+            <button
+              class="upload-btn"
+              id="upload-btn"
+              disabled
+              aria-label="Upload your own MRI image"
+            >
+              Upload Image
+            </button>
+          </section>
+
+          <!-- Sample Grid -->
+          <section class="samples-section" aria-label="Sample MRI images">
+            <p class="section-label">Sample Images</p>
+            <div class="sample-grid" id="sample-grid">
+
+              <button class="sample-btn" data-src="./samples/sample_01.jpg" disabled aria-label="Sample MRI scan 1">
+                <img src="./samples/sample_01.jpg" alt="Sample MRI scan 1" loading="lazy"
+                     onerror="this.parentNode.innerHTML='<span class=\'sample-fallback\'>sample_01</span>'" />
+              </button>
+
+              <button class="sample-btn" data-src="./samples/sample_02.jpg" disabled aria-label="Sample MRI scan 2">
+                <img src="./samples/sample_02.jpg" alt="Sample MRI scan 2" loading="lazy"
+                     onerror="this.parentNode.innerHTML='<span class=\'sample-fallback\'>sample_02</span>'" />
+              </button>
+
+              <button class="sample-btn" data-src="./samples/sample_03.jpg" disabled aria-label="Sample MRI scan 3">
+                <img src="./samples/sample_03.jpg" alt="Sample MRI scan 3" loading="lazy"
+                     onerror="this.parentNode.innerHTML='<span class=\'sample-fallback\'>sample_03</span>'" />
+              </button>
+
+              <button class="sample-btn" data-src="./samples/sample_04.jpg" disabled aria-label="Sample MRI scan 4">
+                <img src="./samples/sample_04.jpg" alt="Sample MRI scan 4" loading="lazy"
+                     onerror="this.parentNode.innerHTML='<span class=\'sample-fallback\'>sample_04</span>'" />
+              </button>
+
+              <button class="sample-btn" data-src="./samples/sample_05.jpg" disabled aria-label="Sample MRI scan 5">
+                <img src="./samples/sample_05.jpg" alt="Sample MRI scan 5" loading="lazy"
+                     onerror="this.parentNode.innerHTML='<span class=\'sample-fallback\'>sample_05</span>'" />
+              </button>
+
+              <button class="sample-btn" data-src="./samples/sample_06.jpg" disabled aria-label="Sample MRI scan 6">
+                <img src="./samples/sample_06.jpg" alt="Sample MRI scan 6" loading="lazy"
+                     onerror="this.parentNode.innerHTML='<span class=\'sample-fallback\'>sample_06</span>'" />
+              </button>
+
+            </div>
+          </section>
+
+        </div><!-- /left-col -->
+
+        <!-- Results Panel -->
+        <section class="results-section" aria-label="Classification results" aria-live="polite">
+          <p class="section-label">Results</p>
+
+          <div class="results-panel">
+
+            <!-- Empty state -->
+            <div class="results-empty" id="results-empty">
+              <p>Run a scan to see results</p>
+            </div>
+
+            <!-- Non-MRI blocked state (shown when heuristic rejects the image) -->
+            <div class="non-mri-block" id="non-mri-block" role="alert">
+              <span class="block-icon" aria-hidden="true">🚫</span>
+              <p class="block-title">Not a Brain MRI</p>
+              <p class="block-body">
+                This image does not appear to be a brain MRI scan. The classifier
+                only accepts greyscale axial or coronal MRI slices. Colour photographs
+                and other images will not produce valid results.
+              </p>
+            </div>
+
+            <!-- Results content (shown after inference) -->
+            <div class="results-content" id="results-content">
+
+              <!-- Top prediction -->
+              <div class="prediction-header">
+                <p class="prediction-label">Predicted Class</p>
+                <div class="prediction-class" id="pred-class">—</div>
+                <div class="prediction-confidence" id="pred-confidence">Confidence: —</div>
+              </div>
+
+              <!-- Probability breakdown bars -->
+              <div class="bars-section">
+                <p class="bars-title">Probability Breakdown</p>
+                <div id="bars-container">
+                  <!-- Bars injected by JS -->
+                </div>
+              </div>
+
+              <div class="divider"></div>
+
+              <!-- Educational blurb -->
+              <div class="blurb-section" id="blurb-section">
+                <p class="blurb-title" id="blurb-title">About</p>
+                <p class="blurb-text" id="blurb-text"></p>
+              </div>
+
+              <div class="divider"></div>
+
+              <!-- Low confidence warning -->
+              <div class="warning-box" id="warn-low-confidence" role="alert">
+                <span class="w-icon" aria-hidden="true">⚠</span>
+                <p>Low confidence — this result is uncertain. Try uploading a clearer MRI image.</p>
+              </div>
+
+            </div><!-- /results-content -->
+
+          </div><!-- /results-panel -->
+        </section>
+
+      </div><!-- /main-grid -->
+    </main>
+
+    <!-- ── Footer ────────────────────────────────────────────── -->
+    <footer>
+      <p>For educational purposes only. Not a diagnostic tool.</p>
+      <p>Model trained with <a href="https://teachablemachine.withgoogle.com" target="_blank" rel="noopener noreferrer" style="color:var(--fg-muted);text-decoration:underline;text-decoration-color:var(--line-strong);">Google Teachable Machine</a>.</p>
+    </footer>
+
+  </div><!-- /page-wrapper -->
+
+  <!-- ── JavaScript ─────────────────────────────────────────── -->
+  <script>
+    'use strict';
+
+    /* ── Educational blurbs (class keys match metadata.json labels) ── */
+    const CLASS_INFO = {
+      'Glioma': {
+        blurb: 'Gliomas are tumours that originate in the glial cells of the brain or spine. They are the most common type of primary brain tumour and vary widely in aggressiveness, from slow-growing grade I tumours to aggressive grade IV glioblastomas. Treatment typically involves surgery, radiation, and chemotherapy depending on grade and location.'
+      },
+      'Meningioma': {
+        blurb: 'Meningiomas arise from the meninges — the protective membranes surrounding the brain and spinal cord. They are usually benign and slow-growing, accounting for roughly 30% of all primary brain tumours. Many are discovered incidentally and monitored over time rather than treated immediately.'
+      },
+      'Pituitary': {
+        blurb: 'Pituitary tumours form in the pituitary gland at the base of the brain. Most are benign adenomas that can disrupt hormone production, affecting growth, metabolism, reproductive function, and stress response. Symptoms depend on whether the tumour secretes excess hormones or compresses surrounding structures.'
+      },
+      'No tumor': {
+        blurb: 'No tumour was detected in this scan. The model found no features consistent with glioma, meningioma, or pituitary tumour. This result is not a clinical clearance — imaging interpretation should always be performed by a qualified radiologist with full clinical context.'
+      }
+    };
+
+    /* ── DOM references ─────────────────────────────────────────── */
+    const statusChip     = document.getElementById('status-chip');
+    const statusText     = document.getElementById('status-text');
+    const uploadBtn      = document.getElementById('upload-btn');
+    const fileInput      = document.getElementById('file-input');
+    const previewImg     = document.getElementById('preview-img');
+    const previewHolder  = document.getElementById('preview-placeholder');
+    const sampleBtns     = document.querySelectorAll('.sample-btn');
+    const resultsEmpty   = document.getElementById('results-empty');
+    const resultsContent = document.getElementById('results-content');
+    const nonMriBlock    = document.getElementById('non-mri-block');
+    const predClass      = document.getElementById('pred-class');
+    const predConf       = document.getElementById('pred-confidence');
+    const barsContainer  = document.getElementById('bars-container');
+    const blurbTitle     = document.getElementById('blurb-title');
+    const blurbText      = document.getElementById('blurb-text');
+    const warnLow        = document.getElementById('warn-low-confidence');
+
+    /* ── State ──────────────────────────────────────────────────── */
+    let model = null;
+    let currentActiveSample = null;
+
+    /* ── Status chip helper ─────────────────────────────────────── */
+    function setStatus(state, message) {
+      statusChip.className = `status-chip ${state}`;
+      statusText.textContent = message;
+    }
+
+    /* ── Enable/disable all interactive buttons ─────────────────── */
+    function setButtonsEnabled(enabled) {
+      uploadBtn.disabled = !enabled;
+      sampleBtns.forEach(btn => { btn.disabled = !enabled; });
+    }
+
+    /* ── Load Teachable Machine model ───────────────────────────── */
+    async function loadModel() {
+      setStatus('loading', 'Loading model…');
+      try {
+        model = await tmImage.load('./model/model.json', './model/metadata.json');
+        setStatus('ready', 'Model ready');
+        setButtonsEnabled(true);
+      } catch (err) {
+        console.error('Model load failed:', err);
+        setStatus('error', 'Failed to load model');
+      }
+    }
+
+    /* ── Show image in preview zone ─────────────────────────────── */
+    function showPreviewImage(src) {
+      previewImg.src = src;
+      previewImg.classList.add('visible');
+      previewHolder.style.display = 'none';
+    }
+
+    /* ── Reset all result states ────────────────────────────────── */
+    function resetResults() {
+      warnLow.classList.remove('visible');
+      nonMriBlock.classList.remove('visible');
+      resultsContent.classList.remove('visible');
+      resultsEmpty.style.display = '';
+    }
+
+    /*
+     * ── Non-MRI heuristic ────────────────────────────────────────
+     *
+     * Draws the image onto a small offscreen canvas and samples pixels
+     * to check two signals:
+     *
+     *  1. COLOUR SATURATION — Brain MRI scans are greyscale (or near-
+     *     greyscale). We compute mean HSL saturation across a grid of
+     *     sample pixels. Real MRIs score < ~0.10; a colour photograph
+     *     typically scores > 0.20.
+     *     Threshold: if mean saturation > 0.15 → flag as non-MRI.
+     *
+     *  2. ASPECT RATIO — MRI slices are roughly square (axial/coronal).
+     *     Threshold: if width/height < 0.55 or > 1.80 → flag as non-MRI.
+     *     (Covers tall portrait photos and wide landscape shots.)
+     *
+     * Returns true if the image looks like a non-MRI.
+     */
+    function looksLikeNonMRI(imgEl) {
+      const w = imgEl.naturalWidth  || imgEl.width;
+      const h = imgEl.naturalHeight || imgEl.height;
+
+      // Aspect ratio check
+      const ratio = w / h;
+      if (ratio < 0.55 || ratio > 1.80) return true;
+
+      // Saturation check via canvas
+      try {
+        const SIZE = 64; // downsample to 64×64 for speed
+        const canvas = document.createElement('canvas');
+        canvas.width  = SIZE;
+        canvas.height = SIZE;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgEl, 0, 0, SIZE, SIZE);
+
+        const data = ctx.getImageData(0, 0, SIZE, SIZE).data;
+        let totalSat = 0;
+        let count = 0;
+
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i]     / 255;
+          const g = data[i + 1] / 255;
+          const b = data[i + 2] / 255;
+
+          const max = Math.max(r, g, b);
+          const min = Math.min(r, g, b);
+          const l   = (max + min) / 2;
+          const sat = max === min ? 0
+                    : l < 0.5
+                      ? (max - min) / (max + min)
+                      : (max - min) / (2 - max - min);
+
+          totalSat += sat;
+          count++;
+        }
+
+        const meanSat = totalSat / count;
+        // Saturation threshold: > 0.15 means distinctly colourful → not MRI
+        if (meanSat > 0.15) return true;
+      } catch (e) {
+        // Canvas tainted (cross-origin) — skip heuristic, let model run
+        console.warn('Canvas sampling blocked (cross-origin image):', e);
+      }
+
+      return false;
+    }
+
+    /* ── Run inference ──────────────────────────────────────────── */
+    async function runInference() {
+      if (!model || !previewImg.src || !previewImg.classList.contains('visible')) return;
+
+      resetResults();
+
+      // ── Heuristic gate: check before sending to the model ────────
+      if (looksLikeNonMRI(previewImg)) {
+        resultsEmpty.style.display = 'none';
+        nonMriBlock.classList.add('visible');
+        return; // do NOT run model.predict — block it entirely
+      }
+
+      // ── Model inference ──────────────────────────────────────────
+      let predictions;
+      try {
+        predictions = await model.predict(previewImg);
+      } catch (err) {
+        console.error('Inference failed:', err);
+        return;
+      }
+
+      // Sort by probability descending
+      const sorted = [...predictions].sort((a, b) => b.probability - a.probability);
+      const top    = sorted[0];
+      const topPct = Math.round(top.probability * 100);
+
+      // Show results panel
+      resultsEmpty.style.display = 'none';
+      resultsContent.classList.add('visible');
+
+      // Top prediction header
+      predClass.textContent = top.className;
+      predConf.textContent  = `Confidence: ${topPct}%`;
+
+      // Probability bars
+      barsContainer.innerHTML = '';
+      sorted.forEach((pred) => {
+        const pct   = Math.round(pred.probability * 100);
+        const isTop = pred.className === top.className;
+
+        const row = document.createElement('div');
+        row.className = `bar-row${isTop ? ' top-class' : ''}`;
+        row.innerHTML = `
+          <span class="bar-label">${pred.className}</span>
+          <div class="bar-track">
+            <div class="bar-fill" style="width: ${pct}%"></div>
+          </div>
+          <span class="bar-pct">${pct}%</span>
+        `;
+        barsContainer.appendChild(row);
+      });
+
+      // Educational blurb
+      const info = CLASS_INFO[top.className];
+      if (info) {
+        blurbTitle.textContent = `About ${top.className}`;
+        blurbText.textContent  = info.blurb;
+      } else {
+        blurbTitle.textContent = 'About';
+        blurbText.textContent  = 'No information available for this class.';
+      }
+
+      // Low-confidence warning (secondary check — image passed heuristic but model is uncertain)
+      if (top.probability < 0.70) {
+        warnLow.classList.add('visible');
+      }
+    }
+
+    /* ── Upload button ──────────────────────────────────────────── */
+    uploadBtn.addEventListener('click', () => { fileInput.click(); });
+
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (currentActiveSample) {
+        currentActiveSample.classList.remove('active');
+        currentActiveSample = null;
+      }
+
+      const objectURL = URL.createObjectURL(file);
+      showPreviewImage(objectURL);
+      resetResults();
+
+      previewImg.onload = () => runInference();
+      fileInput.value = '';
+    });
+
+    /* ── Sample buttons ─────────────────────────────────────────── */
+    sampleBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const src = btn.dataset.src;
+        if (!src) return;
+
+        if (currentActiveSample) currentActiveSample.classList.remove('active');
+        btn.classList.add('active');
+        currentActiveSample = btn;
+
+        showPreviewImage(src);
+        resetResults();
+
+        previewImg.onload = () => runInference();
+
+        // Handle cached images where onload may not fire
+        if (previewImg.complete && previewImg.naturalWidth > 0) {
+          runInference();
+        }
+      });
+    });
+
+    /* ── Bootstrap ──────────────────────────────────────────────── */
+    document.addEventListener('DOMContentLoaded', loadModel);
+  </script>
+
+</body>
+</html>
